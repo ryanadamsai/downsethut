@@ -1,0 +1,17 @@
+{
+  "name": "nfl-analytics-frontend",
+  "private": true,
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "15.5.14",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
