@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { createArcadeMusicController } from "../lib/snakeMusic.mjs";
 import { BOARD_SIZE, DIRECTIONS, TICK_MS, canTurn, createInitialState, pointKey, stepGame } from "../lib/snake.mjs";
 
-const AUTO_RESTART_MS = 1100;
+const LOCAL_BEST_KEY = "snake-2026-best";
+const MODE_KEY = "snake-2026-mode";
+const MUSIC_KEY = "snake-2026-music";
+const MODES = Object.freeze({
+  ARCADE: "arcade",
+  CHILL: "chill"
+});
+const TICK_BY_MODE = Object.freeze({
+  [MODES.ARCADE]: Math.max(120, TICK_MS - 20),
+  [MODES.CHILL]: TICK_MS + 40
+});
 const SWIPE_THRESHOLD = 18;
 
 const KEY_TO_DIRECTION = {
@@ -28,11 +39,44 @@ function getDirectionFromGesture(deltaX, deltaY) {
   return deltaY > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
 }
 
+function readStoredNumber(key, fallbackValue = 0) {
+  if (typeof window === "undefined") {
+    return fallbackValue;
+  }
+
+  const value = Number.parseInt(window.localStorage.getItem(key) || "", 10);
+  return Number.isFinite(value) ? value : fallbackValue;
+}
+
+function readStoredFlag(key, fallbackValue = false) {
+  if (typeof window === "undefined") {
+    return fallbackValue;
+  }
+
+  const value = window.localStorage.getItem(key);
+  if (value === null) {
+    return fallbackValue;
+  }
+
+  return value === "true";
+}
+
+function formatScore(score) {
+  return `${score ?? 0}`;
+}
+
 export default function SnakePage() {
   const [game, setGame] = useState(() => createInitialState({ boardSize: BOARD_SIZE }));
   const [isRunning, setIsRunning] = useState(true);
+  const [mode, setMode] = useState(MODES.ARCADE);
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const [bestScore, setBestScore] = useState(0);
+  const [worldBest, setWorldBest] = useState(null);
+  const [worldAvailable, setWorldAvailable] = useState(false);
   const pendingDirectionRef = useRef(DIRECTIONS.RIGHT);
   const gestureStartRef = useRef(null);
+  const musicControllerRef = useRef(null);
+  const submittedWorldScoreRef = useRef(null);
 
   function queueDirection(direction) {
     const basisDirection = pendingDirectionRef.current || game.direction;
@@ -98,6 +142,115 @@ export default function SnakePage() {
   }
 
   useEffect(() => {
+    setBestScore(readStoredNumber(LOCAL_BEST_KEY, 0));
+    setMode(window.localStorage.getItem(MODE_KEY) || MODES.ARCADE);
+    setMusicEnabled(readStoredFlag(MUSIC_KEY, false));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWorldScore() {
+      try {
+        const response = await fetch("/api/snake-score");
+        const payload = await response.json();
+        if (!active) {
+          return;
+        }
+        setWorldAvailable(Boolean(payload.available));
+        setWorldBest(Number.isFinite(payload.score) ? payload.score : null);
+      } catch {
+        if (active) {
+          setWorldAvailable(false);
+          setWorldBest(null);
+        }
+      }
+    }
+
+    loadWorldScore();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(MODE_KEY, mode);
+  }, [mode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(MUSIC_KEY, String(musicEnabled));
+  }, [musicEnabled]);
+
+  useEffect(() => {
+    if (game.score <= bestScore || typeof window === "undefined") {
+      return;
+    }
+
+    setBestScore(game.score);
+    window.localStorage.setItem(LOCAL_BEST_KEY, String(game.score));
+  }, [bestScore, game.score]);
+
+  useEffect(() => {
+    if (!musicControllerRef.current) {
+      musicControllerRef.current = createArcadeMusicController();
+    }
+
+    return () => {
+      musicControllerRef.current?.destroy();
+      musicControllerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = musicControllerRef.current;
+    if (!controller) {
+      return;
+    }
+
+    if (mode === MODES.ARCADE && musicEnabled && isRunning && !game.gameOver) {
+      controller.start();
+    } else {
+      controller.stop();
+    }
+  }, [game.gameOver, isRunning, mode, musicEnabled]);
+
+  useEffect(() => {
+    if (!game.gameOver || !worldAvailable || game.score <= 0) {
+      return;
+    }
+    if (submittedWorldScoreRef.current === game.score) {
+      return;
+    }
+    if (worldBest !== null && game.score <= worldBest) {
+      return;
+    }
+
+    submittedWorldScoreRef.current = game.score;
+
+    fetch("/api/snake-score", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ score: game.score })
+    })
+      .then((response) => response.json())
+      .then((payload) => {
+        setWorldAvailable(Boolean(payload.available));
+        if (Number.isFinite(payload.score)) {
+          setWorldBest(payload.score);
+        }
+      })
+      .catch(() => {});
+  }, [game.gameOver, game.score, worldAvailable, worldBest]);
+
+  useEffect(() => {
     function handleKeyDown(event) {
       const normalizedKey = event.key.toLowerCase();
       const direction = KEY_TO_DIRECTION[normalizedKey];
@@ -121,13 +274,23 @@ export default function SnakePage() {
         event.preventDefault();
         resetGame({ autoStart: true });
       }
+
+      if (normalizedKey === "m" && mode === MODES.ARCADE) {
+        event.preventDefault();
+        setMusicEnabled((currentValue) => !currentValue);
+      }
+
+      if (normalizedKey === "c") {
+        event.preventDefault();
+        setMode((currentValue) => (currentValue === MODES.ARCADE ? MODES.CHILL : MODES.ARCADE));
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [game.direction, game.gameOver]);
+  }, [game.direction, game.gameOver, mode]);
 
   useEffect(() => {
     if (!isRunning || game.gameOver) {
@@ -143,31 +306,17 @@ export default function SnakePage() {
         pendingDirectionRef.current = nextGame.direction;
         return nextGame;
       });
-    }, TICK_MS);
+    }, TICK_BY_MODE[mode]);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [game.gameOver, isRunning]);
+  }, [game.gameOver, isRunning, mode]);
 
   useEffect(() => {
     if (game.gameOver) {
       setIsRunning(false);
     }
-  }, [game.gameOver]);
-
-  useEffect(() => {
-    if (!game.gameOver) {
-      return undefined;
-    }
-
-    const restartTimer = window.setTimeout(() => {
-      resetGame({ autoStart: true });
-    }, AUTO_RESTART_MS);
-
-    return () => {
-      window.clearTimeout(restartTimer);
-    };
   }, [game.gameOver]);
 
   const snakeIndexByCell = useMemo(
@@ -214,10 +363,29 @@ export default function SnakePage() {
 
   return (
     <main
-      className={`page-shell snake-screen${game.gameOver ? " is-game-over" : ""}`}
+      className={`page-shell snake-screen ${mode === MODES.CHILL ? "chill-mode" : "arcade-mode"}${game.gameOver ? " is-game-over" : ""}`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
     >
+      <nav className="snake-topnav" aria-label="Snake scoreboard">
+        <div className="snake-nav-group">
+          <div className="snake-stat-pill">
+            <span>SCORE</span>
+            <strong>{formatScore(game.score)}</strong>
+          </div>
+          <div className="snake-stat-pill">
+            <span>BEST</span>
+            <strong>{formatScore(bestScore)}</strong>
+          </div>
+          {worldAvailable ? (
+            <div className="snake-stat-pill">
+              <span>WORLD</span>
+              <strong>{formatScore(worldBest)}</strong>
+            </div>
+          ) : null}
+        </div>
+      </nav>
+
       <div className="snake-stage">
         <div className="snake-board-frame">
           <div
@@ -230,6 +398,42 @@ export default function SnakePage() {
           </div>
         </div>
       </div>
+
+      <nav className="snake-bottomnav" aria-label="Snake controls">
+        <div className="snake-nav-group">
+          <button type="button" className="snake-control-pill" onClick={() => resetGame({ autoStart: true })}>
+            Restart
+          </button>
+        </div>
+
+        <div className="snake-mode-toggle" role="group" aria-label="Snake mode">
+          <button
+            type="button"
+            className={`snake-mode-pill${mode === MODES.ARCADE ? " active" : ""}`}
+            onClick={() => setMode(MODES.ARCADE)}
+          >
+            Arcade
+          </button>
+          <button
+            type="button"
+            className={`snake-mode-pill${mode === MODES.CHILL ? " active" : ""}`}
+            onClick={() => setMode(MODES.CHILL)}
+          >
+            Chill
+          </button>
+        </div>
+
+        <div className="snake-nav-group">
+          <button
+            type="button"
+            className={`snake-control-pill${musicEnabled && mode === MODES.ARCADE ? " active" : ""}`}
+            onClick={() => setMusicEnabled((currentValue) => !currentValue)}
+            disabled={mode !== MODES.ARCADE}
+          >
+            Music
+          </button>
+        </div>
+      </nav>
     </main>
   );
 }
