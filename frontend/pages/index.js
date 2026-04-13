@@ -174,6 +174,11 @@ export default function HomePage() {
           <p className="hero-copy">
             Play-by-play, schedule context, rosters, snap counts, and public Next Gen Stats in one lightweight dashboard.
           </p>
+          <div className="hero-actions">
+            <Link href="/snake" className="link-button">
+              Play 2026 Snake
+            </Link>
+          </div>
         </div>
       </section>
 

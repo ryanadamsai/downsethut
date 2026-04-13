@@ -78,6 +78,13 @@ select:focus-visible {
   line-height: 1.6;
 }
 
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 .card {
   background: rgba(19, 26, 46, 0.92);
   border: 1px solid var(--border);
@@ -327,5 +334,123 @@ select {
   .summary-grid {
     grid-template-columns: 1.2fr 1fr;
     align-items: center;
+  }
+}
+
+.snake-page {
+  max-width: 1120px;
+  --accent: #86b8aa;
+  --accent-2: #f4b183;
+  --danger: #f08a8a;
+}
+
+.snake-copy-note {
+  max-width: 620px;
+}
+
+.snake-hero,
+.snake-layout {
+  display: grid;
+  gap: 20px;
+}
+
+.snake-stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.snake-board-card,
+.snake-sidebar {
+  align-self: start;
+}
+
+.snake-board {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(24, 33, 58, 0.72);
+  border: 1px solid rgba(46, 59, 99, 0.65);
+}
+
+.snake-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: rgba(11, 16, 32, 0.92);
+  border: 1px solid rgba(46, 59, 99, 0.32);
+}
+
+.snake-cell.snake-body {
+  background: linear-gradient(180deg, #a7d5c8 0%, #86b8aa 100%);
+}
+
+.snake-cell.snake-head {
+  background: linear-gradient(180deg, #f7ede2 0%, #f4d7c8 100%);
+}
+
+.snake-cell.food {
+  background: linear-gradient(180deg, #f7a399 0%, #e76f51 100%);
+}
+
+.snake-button-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.snake-instructions {
+  margin-bottom: 18px;
+}
+
+.snake-instructions p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.snake-touchpad {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    ". up ."
+    "left down right";
+}
+
+.snake-control {
+  border: 1px solid var(--border);
+  background: rgba(24, 33, 58, 0.72);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 10px;
+  touch-action: manipulation;
+}
+
+.snake-control-up {
+  grid-area: up;
+}
+
+.snake-control-left {
+  grid-area: left;
+}
+
+.snake-control-down {
+  grid-area: down;
+}
+
+.snake-control-right {
+  grid-area: right;
+}
+
+@media (min-width: 900px) {
+  .snake-layout {
+    grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.8fr);
+  }
+
+  .snake-hero {
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+    align-items: start;
   }
 }
