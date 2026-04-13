@@ -1,7 +1,9 @@
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BOARD_SIZE, DIRECTIONS, TICK_MS, canTurn, createInitialState, pointKey, stepGame } from "../lib/snake.mjs";
+
+const AUTO_RESTART_MS = 1100;
+const SWIPE_THRESHOLD = 18;
 
 const KEY_TO_DIRECTION = {
   arrowup: DIRECTIONS.UP,
@@ -14,30 +16,23 @@ const KEY_TO_DIRECTION = {
   d: DIRECTIONS.RIGHT
 };
 
-const CONTROL_LAYOUT = [
-  { label: "Up", direction: DIRECTIONS.UP, className: "snake-control-up" },
-  { label: "Left", direction: DIRECTIONS.LEFT, className: "snake-control-left" },
-  { label: "Down", direction: DIRECTIONS.DOWN, className: "snake-control-down" },
-  { label: "Right", direction: DIRECTIONS.RIGHT, className: "snake-control-right" }
-];
+function getDirectionFromGesture(deltaX, deltaY) {
+  if (Math.abs(deltaX) < SWIPE_THRESHOLD && Math.abs(deltaY) < SWIPE_THRESHOLD) {
+    return null;
+  }
 
-function getStatusLabel(game, isRunning) {
-  if (game.hasWon) {
-    return "Peak elder-millennial form";
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return deltaX > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
   }
-  if (game.gameOver) {
-    return game.collision === "self" ? "Game over: group chat spiral" : "Game over: hard boundary";
-  }
-  if (isRunning) {
-    return "Running on iced coffee";
-  }
-  return game.tick === 0 ? "Ready for a microbreak" : "Paused for a calendar invite";
+
+  return deltaY > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
 }
 
 export default function SnakePage() {
   const [game, setGame] = useState(() => createInitialState({ boardSize: BOARD_SIZE }));
-  const [isRunning, setIsRunning] = useState(false);
+  const [isRunning, setIsRunning] = useState(true);
   const pendingDirectionRef = useRef(DIRECTIONS.RIGHT);
+  const gestureStartRef = useRef(null);
 
   function queueDirection(direction) {
     const basisDirection = pendingDirectionRef.current || game.direction;
@@ -50,10 +45,15 @@ export default function SnakePage() {
     }
   }
 
-  function resetGame({ autoStart = false } = {}) {
+  function resetGame({ autoStart = true, nextDirection } = {}) {
     const nextGame = createInitialState({ boardSize: BOARD_SIZE });
-    pendingDirectionRef.current = nextGame.direction;
-    setGame(nextGame);
+    const direction = canTurn(nextGame.direction, nextDirection) ? nextDirection : nextGame.direction;
+
+    pendingDirectionRef.current = direction;
+    setGame({
+      ...nextGame,
+      direction
+    });
     setIsRunning(autoStart);
   }
 
@@ -62,7 +62,39 @@ export default function SnakePage() {
       resetGame({ autoStart: true });
       return;
     }
-    setIsRunning((currentValue) => (game.tick === 0 ? true : !currentValue));
+
+    setIsRunning((currentValue) => !currentValue);
+  }
+
+  function handlePointerDown(event) {
+    gestureStartRef.current = {
+      x: event.clientX,
+      y: event.clientY
+    };
+  }
+
+  function handlePointerUp(event) {
+    const start = gestureStartRef.current;
+    gestureStartRef.current = null;
+
+    if (!start) {
+      return;
+    }
+
+    const direction = getDirectionFromGesture(event.clientX - start.x, event.clientY - start.y);
+
+    if (direction) {
+      if (game.gameOver) {
+        resetGame({ autoStart: true, nextDirection: direction });
+      } else {
+        queueDirection(direction);
+      }
+      return;
+    }
+
+    if (game.gameOver) {
+      resetGame({ autoStart: true });
+    }
   }
 
   useEffect(() => {
@@ -72,6 +104,10 @@ export default function SnakePage() {
 
       if (direction) {
         event.preventDefault();
+        if (game.gameOver) {
+          resetGame({ autoStart: true, nextDirection: direction });
+          return;
+        }
         queueDirection(direction);
         return;
       }
@@ -83,7 +119,7 @@ export default function SnakePage() {
 
       if (normalizedKey === "r") {
         event.preventDefault();
-        resetGame({ autoStart: false });
+        resetGame({ autoStart: true });
       }
     }
 
@@ -91,7 +127,7 @@ export default function SnakePage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [game.direction, game.gameOver, game.tick, isRunning]);
+  }, [game.direction, game.gameOver]);
 
   useEffect(() => {
     if (!isRunning || game.gameOver) {
@@ -120,7 +156,24 @@ export default function SnakePage() {
     }
   }, [game.gameOver]);
 
-  const snakeCells = useMemo(() => new Set(game.snake.map(pointKey)), [game.snake]);
+  useEffect(() => {
+    if (!game.gameOver) {
+      return undefined;
+    }
+
+    const restartTimer = window.setTimeout(() => {
+      resetGame({ autoStart: true });
+    }, AUTO_RESTART_MS);
+
+    return () => {
+      window.clearTimeout(restartTimer);
+    };
+  }, [game.gameOver]);
+
+  const snakeIndexByCell = useMemo(
+    () => new Map(game.snake.map((segment, index) => [pointKey(segment), index])),
+    [game.snake]
+  );
   const foodCellKey = game.food ? pointKey(game.food) : "";
   const headCellKey = pointKey(game.snake[0]);
   const boardCells = useMemo(() => {
@@ -130,63 +183,43 @@ export default function SnakePage() {
       for (let x = 0; x < game.boardSize; x += 1) {
         const key = `${x}:${y}`;
         let className = "snake-cell";
+        let style;
 
         if (key === foodCellKey) {
           className += " food";
         } else if (key === headCellKey) {
           className += " snake-head";
-        } else if (snakeCells.has(key)) {
+          style = { "--cell-hue": `${(game.tick * 10) % 360}` };
+        } else if (snakeIndexByCell.has(key)) {
           className += " snake-body";
+          style = {
+            "--cell-hue": `${(190 + snakeIndexByCell.get(key) * 26) % 360}`
+          };
         }
 
-        cells.push(<div key={key} className={className} role="gridcell" aria-label={className.replace("snake-cell ", "")} />);
+        cells.push(
+          <div
+            key={key}
+            className={className}
+            style={style}
+            role="gridcell"
+            aria-label={className.replace("snake-cell ", "")}
+          />
+        );
       }
     }
 
     return cells;
-  }, [foodCellKey, game.boardSize, headCellKey, snakeCells]);
+  }, [foodCellKey, game.boardSize, game.tick, headCellKey, snakeIndexByCell]);
 
   return (
-    <main className="page-shell snake-page">
-      <div className="page-top">
-        <Link href="/" className="back-link">
-          Back to dashboard
-        </Link>
-      </div>
-
-      <section className="card snake-hero">
-        <div>
-          <p className="eyebrow">Arcade Therapy</p>
-          <h1>Snake for 2026 Millennials</h1>
-          <p className="hero-copy">
-            Classic Snake for the browser-tab generation: muted colors, microbreak energy, and one more run before the next notification.
-          </p>
-          <p className="hero-copy compact-copy snake-copy-note">
-            Same rules, same loop, just a little more elder-millennial-coded.
-          </p>
-        </div>
-        <div className="snake-stats">
-          <div className="metric-card">
-            <span className="label">Score</span>
-            <strong>{game.score}</strong>
-          </div>
-          <div className="metric-card">
-            <span className="label">Snake Size</span>
-            <strong>{game.snake.length}</strong>
-          </div>
-          <div className="metric-card">
-            <span className="label">Mood</span>
-            <strong>{getStatusLabel(game, isRunning)}</strong>
-          </div>
-        </div>
-      </section>
-
-      <div className="snake-layout">
-        <section className="card snake-board-card">
-          <div className="card-header">
-            <h2>Board</h2>
-            <span>{game.boardSize} x {game.boardSize}</span>
-          </div>
+    <main
+      className={`page-shell snake-screen${game.gameOver ? " is-game-over" : ""}`}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+    >
+      <div className="snake-stage">
+        <div className="snake-board-frame">
           <div
             className="snake-board"
             style={{ gridTemplateColumns: `repeat(${game.boardSize}, minmax(0, 1fr))` }}
@@ -195,43 +228,7 @@ export default function SnakePage() {
           >
             {boardCells}
           </div>
-        </section>
-
-        <aside className="card snake-sidebar">
-          <div className="card-header">
-            <h2>Controls</h2>
-            <span>{TICK_MS}ms focus cycle</span>
-          </div>
-
-          <div className="snake-button-row">
-            <button type="button" className="primary-button" onClick={togglePlayback}>
-              {game.gameOver ? "Play again" : isRunning ? "Pause" : game.tick === 0 ? "Start" : "Resume"}
-            </button>
-            <button type="button" className="tab-button" onClick={() => resetGame({ autoStart: false })}>
-              Restart
-            </button>
-          </div>
-
-          <div className="snake-instructions">
-            <p className="label">Keyboard</p>
-            <p>Arrow keys or WASD to steer. Space pauses. R restarts.</p>
-            <p className="label">2026 Millennial Mode</p>
-            <p>Still classic Snake: collect the coral snack, avoid the walls, and do not spiral into your own tail.</p>
-          </div>
-
-          <div className="snake-touchpad" aria-label="On-screen controls">
-            {CONTROL_LAYOUT.map((control) => (
-              <button
-                key={control.direction}
-                type="button"
-                className={`snake-control ${control.className}`}
-                onClick={() => queueDirection(control.direction)}
-              >
-                {control.label}
-              </button>
-            ))}
-          </div>
-        </aside>
+        </div>
       </div>
     </main>
   );
