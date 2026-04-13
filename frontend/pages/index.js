@@ -176,7 +176,7 @@ export default function HomePage() {
           </p>
           <div className="hero-actions">
             <Link href="/snake" className="link-button">
-              Play 2026 Snake
+              Play Snake
             </Link>
           </div>
         </div>

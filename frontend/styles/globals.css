@@ -347,11 +347,11 @@ select {
   overflow: hidden;
   touch-action: none;
   background:
-    radial-gradient(circle at 18% 18%, rgba(255, 96, 91, 0.32), transparent 24%),
-    radial-gradient(circle at 82% 20%, rgba(71, 206, 255, 0.28), transparent 22%),
-    radial-gradient(circle at 22% 84%, rgba(255, 224, 102, 0.24), transparent 24%),
-    radial-gradient(circle at 80% 82%, rgba(183, 96, 255, 0.26), transparent 24%),
-    linear-gradient(135deg, #15001e 0%, #0b1b4b 42%, #081126 100%);
+    radial-gradient(circle at 16% 18%, rgba(120, 235, 220, 0.24), transparent 24%),
+    radial-gradient(circle at 82% 18%, rgba(125, 170, 255, 0.22), transparent 26%),
+    radial-gradient(circle at 22% 84%, rgba(255, 188, 126, 0.18), transparent 24%),
+    radial-gradient(circle at 78% 80%, rgba(255, 118, 182, 0.16), transparent 24%),
+    linear-gradient(145deg, #06101f 0%, #09192f 42%, #050b16 100%);
 }
 
 .snake-screen::before,
@@ -364,15 +364,15 @@ select {
 
 .snake-screen::before {
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: min(5vw, 42px) min(5vw, 42px);
-  opacity: 0.18;
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 56%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: auto, min(6vw, 44px) min(6vw, 44px), min(6vw, 44px) min(6vw, 44px);
+  opacity: 0.22;
 }
 
 .snake-screen::after {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 22%, transparent 78%, rgba(255, 255, 255, 0.05));
-  mix-blend-mode: screen;
+  background: radial-gradient(circle at center, transparent 48%, rgba(0, 0, 0, 0.36) 100%);
 }
 
 .snake-topnav,
@@ -380,7 +380,7 @@ select {
   position: absolute;
   left: 50%;
   z-index: 2;
-  width: min(calc(100vw - 24px), 960px);
+  width: min(calc(100vw - 24px), 1080px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -390,12 +390,12 @@ select {
 
 .snake-topnav {
   top: 0;
-  padding: max(12px, env(safe-area-inset-top)) 0 0;
+  padding: max(14px, env(safe-area-inset-top)) 0 0;
 }
 
 .snake-bottomnav {
   bottom: 0;
-  padding: 0 0 max(12px, env(safe-area-inset-bottom));
+  padding: 0 0 max(14px, env(safe-area-inset-bottom));
 }
 
 .snake-nav-group {
@@ -407,14 +407,18 @@ select {
 
 .snake-stat-pill,
 .snake-control-pill,
-.snake-mode-toggle {
-  backdrop-filter: blur(18px);
-  background: rgba(6, 10, 24, 0.46);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+.snake-mode-toggle,
+.snake-player-pill {
+  backdrop-filter: blur(20px);
+  background: rgba(7, 12, 24, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.snake-stat-pill {
+.snake-stat-pill,
+.snake-player-pill {
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
@@ -423,15 +427,27 @@ select {
   border-radius: 999px;
 }
 
-.snake-stat-pill span {
+.snake-stat-pill span,
+.snake-player-pill span {
   font-size: 11px;
   letter-spacing: 0.14em;
   color: rgba(237, 242, 255, 0.72);
 }
 
-.snake-stat-pill strong {
+.snake-stat-pill strong,
+.snake-player-pill strong {
   font-size: 17px;
   font-weight: 700;
+}
+
+.snake-player-pill {
+  border-color: hsla(var(--player-hue) 82% 74% / 0.32);
+  background:
+    linear-gradient(145deg, hsla(var(--player-hue) 90% 66% / 0.16), rgba(7, 12, 24, 0.5));
+}
+
+.snake-player-pill.muted {
+  opacity: 0.42;
 }
 
 .snake-control-pill {
@@ -439,15 +455,14 @@ select {
   padding: 10px 16px;
   border-radius: 999px;
   color: var(--text);
-  background-color: rgba(6, 10, 24, 0.46);
+  background-color: rgba(7, 12, 24, 0.46);
 }
 
 .snake-control-pill.active {
-  background: linear-gradient(145deg, rgba(255, 92, 214, 0.94), rgba(110, 126, 255, 0.94));
-}
-
-.snake-control-pill:disabled {
-  opacity: 0.42;
+  background:
+    linear-gradient(145deg, rgba(171, 245, 230, 0.92), rgba(162, 184, 255, 0.92));
+  color: #07101f;
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .snake-mode-toggle {
@@ -461,176 +476,127 @@ select {
   border: 0;
   border-radius: 999px;
   min-height: 34px;
-  padding: 8px 16px;
-  color: rgba(237, 242, 255, 0.78);
+  padding: 8px 15px;
+  color: rgba(237, 242, 255, 0.76);
   background: transparent;
 }
 
 .snake-mode-pill.active {
-  color: #08101f;
-  background: linear-gradient(145deg, rgba(255, 238, 132, 0.96), rgba(255, 163, 94, 0.96));
+  color: #07101f;
+  background:
+    linear-gradient(145deg, rgba(239, 247, 255, 0.98), rgba(176, 227, 245, 0.98));
 }
 
 .snake-stage {
   position: relative;
   z-index: 1;
-  width: min(calc(100vw - 24px), calc(100dvh - 148px), 960px);
+  width: min(calc(100vw - 24px), calc(100dvh - 150px), 980px);
   aspect-ratio: 1;
-  padding: min(2.2vmin, 18px);
-  border-radius: min(4.6vmin, 34px);
+  padding: min(2.3vmin, 18px);
+  border-radius: min(4.8vmin, 36px);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03)),
-    linear-gradient(145deg, rgba(11, 16, 32, 0.8), rgba(9, 20, 58, 0.94));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.025)),
+    linear-gradient(145deg, rgba(7, 14, 29, 0.88), rgba(10, 24, 42, 0.94));
   box-shadow:
-    0 32px 80px rgba(5, 8, 21, 0.62),
-    0 0 0 1px rgba(255, 255, 255, 0.12),
-    0 0 48px rgba(87, 195, 255, 0.22);
+    0 34px 90px rgba(5, 8, 21, 0.56),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 72px rgba(116, 199, 255, 0.1);
 }
 
 .snake-board-frame {
   width: 100%;
   height: 100%;
   padding: min(1.6vmin, 12px);
-  border-radius: min(3.8vmin, 28px);
+  border-radius: min(4vmin, 28px);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
-    linear-gradient(145deg, rgba(25, 33, 67, 0.98), rgba(10, 13, 30, 0.98));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    linear-gradient(145deg, rgba(14, 22, 40, 0.98), rgba(8, 12, 24, 0.98));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -12px 24px rgba(0, 0, 0, 0.24);
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -12px 22px rgba(0, 0, 0, 0.2);
 }
 
 .snake-board {
   width: 100%;
   height: 100%;
   display: grid;
-  gap: min(0.65vmin, 6px);
-  padding: min(1vmin, 8px);
-  border-radius: min(3.2vmin, 24px);
+  gap: min(0.52vmin, 5px);
+  padding: min(0.92vmin, 8px);
+  border-radius: min(3.4vmin, 24px);
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.14), rgba(255, 255, 255, 0.03)),
-    linear-gradient(145deg, rgba(7, 10, 27, 0.98), rgba(12, 21, 48, 0.98));
-}
-
-.snake-screen.chill-mode {
-  background:
-    radial-gradient(circle at 18% 18%, rgba(112, 215, 255, 0.24), transparent 24%),
-    radial-gradient(circle at 82% 20%, rgba(170, 155, 255, 0.2), transparent 22%),
-    radial-gradient(circle at 22% 84%, rgba(145, 255, 202, 0.18), transparent 24%),
-    radial-gradient(circle at 80% 82%, rgba(255, 211, 143, 0.18), transparent 24%),
-    linear-gradient(135deg, #061226 0%, #0c2440 46%, #101a2e 100%);
-}
-
-.snake-screen.chill-mode .snake-stage {
-  box-shadow:
-    0 28px 64px rgba(5, 8, 21, 0.46),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 0 36px rgba(109, 197, 255, 0.14);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
+    linear-gradient(145deg, rgba(8, 14, 28, 0.98), rgba(9, 17, 30, 0.98));
 }
 
 .snake-cell {
   aspect-ratio: 1;
   border-radius: max(4px, 0.7vmin);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.045);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)),
-    linear-gradient(145deg, rgba(13, 20, 46, 0.96), rgba(8, 12, 28, 0.96));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
+    linear-gradient(145deg, rgba(15, 24, 43, 0.94), rgba(8, 13, 24, 0.98));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.22);
-}
-
-.snake-screen.chill-mode .snake-cell {
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
-    linear-gradient(145deg, rgba(15, 26, 49, 0.96), rgba(10, 16, 31, 0.96));
+    inset 0 -2px 0 rgba(0, 0, 0, 0.16);
 }
 
 .snake-cell.snake-body {
-  border-color: hsla(var(--cell-hue) 100% 82% / 0.62);
+  border-color: hsla(var(--player-hue) 86% 74% / 0.42);
   background:
-    linear-gradient(145deg, hsla(var(--cell-hue) 100% 82% / 0.98), hsla(calc(var(--cell-hue) + 24) 100% 58% / 0.98));
+    linear-gradient(
+      145deg,
+      hsla(var(--player-hue) 92% var(--segment-lightness) / 0.96),
+      hsla(calc(var(--player-hue) + 14) 84% var(--segment-accent) / 0.94)
+    );
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.36),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
-    0 0 14px hsla(var(--cell-hue) 100% 64% / 0.28);
-}
-
-.snake-screen.chill-mode .snake-cell.snake-body {
-  border-color: rgba(183, 246, 255, 0.56);
-  background:
-    linear-gradient(145deg, rgba(216, 255, 252, 0.98), rgba(132, 220, 198, 0.96));
-  box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.34),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.16),
-    0 0 12px rgba(122, 228, 255, 0.18);
+    inset 0 2px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.12),
+    0 0 14px hsla(var(--player-hue) 90% 70% / var(--segment-glow));
 }
 
 .snake-cell.snake-head {
-  border-color: rgba(255, 255, 255, 0.78);
+  border-color: hsla(var(--player-hue) 100% 94% / 0.86);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98), hsla(var(--cell-hue) 100% 56% / 0.98));
-  box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.52),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
-    0 0 18px hsla(var(--cell-hue) 100% 70% / 0.44);
-}
-
-.snake-screen.chill-mode .snake-cell.snake-head {
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(162, 203, 255, 0.96));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), hsla(var(--player-hue) 92% 64% / 0.98));
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.16),
-    0 0 16px rgba(162, 203, 255, 0.24);
+    inset 0 -4px 0 rgba(0, 0, 0, 0.12),
+    0 0 18px hsla(var(--player-hue) 96% 74% / 0.28);
 }
 
 .snake-cell.food {
-  border-color: rgba(255, 243, 133, 0.92);
+  border-color: rgba(250, 248, 228, 0.88);
   background:
-    linear-gradient(145deg, #fff585 0%, #ff8f48 54%, #ff3cac 100%);
+    radial-gradient(circle at 35% 32%, rgba(255, 255, 255, 0.95), rgba(255, 228, 169, 0.92) 34%, rgba(255, 164, 180, 0.9) 70%, rgba(146, 222, 255, 0.82) 100%);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
-    0 0 20px rgba(255, 109, 87, 0.48);
-  animation: snake-food-pulse 720ms ease-in-out infinite alternate;
-}
-
-.snake-screen.chill-mode .snake-cell.food {
-  border-color: rgba(255, 222, 185, 0.9);
-  background:
-    linear-gradient(145deg, rgba(255, 235, 184, 0.98), rgba(255, 155, 155, 0.96));
-  box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.34),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.16),
-    0 0 16px rgba(255, 176, 126, 0.24);
+    inset 0 2px 0 rgba(255, 255, 255, 0.36),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+    0 0 20px rgba(182, 231, 255, 0.24);
+  animation: snake-food-pulse 1.6s ease-in-out infinite alternate;
 }
 
 .snake-screen.is-game-over .snake-stage {
-  transform: scale(0.985);
-  filter: saturate(1.35) brightness(1.06);
+  transform: scale(0.988);
+  filter: saturate(1.06) brightness(0.98);
 }
 
-.snake-screen.is-game-over .snake-board-frame {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -12px 24px rgba(0, 0, 0, 0.24),
-    0 0 32px rgba(255, 86, 86, 0.28);
+.snake-screen.is-game-over .snake-board {
+  filter: contrast(0.98) brightness(0.92);
 }
 
 @keyframes snake-food-pulse {
   from {
-    transform: scale(0.92);
-    filter: saturate(1);
+    transform: scale(0.95);
+    filter: saturate(0.92);
   }
 
   to {
     transform: scale(1);
-    filter: saturate(1.18);
+    filter: saturate(1.08);
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 860px) {
   .snake-topnav,
   .snake-bottomnav {
     width: calc(100vw - 16px);
@@ -638,23 +604,34 @@ select {
   }
 
   .snake-topnav,
-  .snake-bottomnav,
+  .snake-bottomnav {
+    justify-content: center;
+  }
+
   .snake-nav-group {
     justify-content: center;
   }
 
+  .snake-stage {
+    width: min(calc(100vw - 14px), calc(100dvh - 170px));
+  }
+}
+
+@media (max-width: 640px) {
   .snake-stat-pill,
-  .snake-control-pill {
+  .snake-control-pill,
+  .snake-player-pill {
     min-height: 38px;
     padding: 9px 12px;
   }
 
-  .snake-mode-pill {
-    min-height: 32px;
-    padding: 8px 13px;
+  .snake-stat-pill strong,
+  .snake-player-pill strong {
+    font-size: 15px;
   }
 
-  .snake-stage {
-    width: min(calc(100vw - 14px), calc(100dvh - 164px));
+  .snake-mode-pill {
+    min-height: 32px;
+    padding: 8px 12px;
   }
 }

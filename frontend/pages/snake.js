@@ -1,22 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { createArcadeMusicController } from "../lib/snakeMusic.mjs";
-import { BOARD_SIZE, DIRECTIONS, TICK_MS, canTurn, createInitialState, pointKey, stepGame } from "../lib/snake.mjs";
+import { createChillMusicController } from "../lib/snakeMusic.mjs";
+import { BOARD_SIZE, DIRECTIONS, MAX_PLAYERS, PLAYER_CONFIGS, TICK_MS, canTurn, createInitialState, getTotalScore, pointKey, stepGame } from "../lib/snake.mjs";
 
 const LOCAL_BEST_KEY = "snake-2026-best";
-const MODE_KEY = "snake-2026-mode";
-const MUSIC_KEY = "snake-2026-music";
-const MODES = Object.freeze({
-  ARCADE: "arcade",
-  CHILL: "chill"
-});
-const TICK_BY_MODE = Object.freeze({
-  [MODES.ARCADE]: Math.max(120, TICK_MS - 20),
-  [MODES.CHILL]: TICK_MS + 40
-});
+const PLAYER_COUNT_KEY = "snake-2026-players";
+const SOUND_KEY = "snake-2026-sound";
 const SWIPE_THRESHOLD = 18;
 
-const KEY_TO_DIRECTION = {
+const SOLO_KEY_TO_DIRECTION = {
   arrowup: DIRECTIONS.UP,
   w: DIRECTIONS.UP,
   arrowdown: DIRECTIONS.DOWN,
@@ -27,17 +19,32 @@ const KEY_TO_DIRECTION = {
   d: DIRECTIONS.RIGHT
 };
 
-function getDirectionFromGesture(deltaX, deltaY) {
-  if (Math.abs(deltaX) < SWIPE_THRESHOLD && Math.abs(deltaY) < SWIPE_THRESHOLD) {
-    return null;
+const PLAYER_KEY_BINDINGS = Object.freeze({
+  p1: {
+    arrowup: DIRECTIONS.UP,
+    arrowdown: DIRECTIONS.DOWN,
+    arrowleft: DIRECTIONS.LEFT,
+    arrowright: DIRECTIONS.RIGHT
+  },
+  p2: {
+    w: DIRECTIONS.UP,
+    s: DIRECTIONS.DOWN,
+    a: DIRECTIONS.LEFT,
+    d: DIRECTIONS.RIGHT
+  },
+  p3: {
+    i: DIRECTIONS.UP,
+    k: DIRECTIONS.DOWN,
+    j: DIRECTIONS.LEFT,
+    l: DIRECTIONS.RIGHT
+  },
+  p4: {
+    t: DIRECTIONS.UP,
+    g: DIRECTIONS.DOWN,
+    f: DIRECTIONS.LEFT,
+    h: DIRECTIONS.RIGHT
   }
-
-  if (Math.abs(deltaX) > Math.abs(deltaY)) {
-    return deltaX > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
-  }
-
-  return deltaY > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
-}
+});
 
 function readStoredNumber(key, fallbackValue = 0) {
   if (typeof window === "undefined") {
@@ -61,44 +68,106 @@ function readStoredFlag(key, fallbackValue = false) {
   return value === "true";
 }
 
+function readStoredPlayerCount() {
+  return Math.min(Math.max(readStoredNumber(PLAYER_COUNT_KEY, 1), 1), MAX_PLAYERS);
+}
+
 function formatScore(score) {
   return `${score ?? 0}`;
 }
 
+function getDirectionFromGesture(deltaX, deltaY) {
+  if (Math.abs(deltaX) < SWIPE_THRESHOLD && Math.abs(deltaY) < SWIPE_THRESHOLD) {
+    return null;
+  }
+
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return deltaX > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+  }
+
+  return deltaY > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+}
+
+function getDirectionCommand(key, playerCount) {
+  if (playerCount === 1) {
+    const direction = SOLO_KEY_TO_DIRECTION[key];
+    return direction ? { playerId: "p1", direction } : null;
+  }
+
+  return PLAYER_CONFIGS.slice(0, playerCount)
+    .map((player) => {
+      const direction = PLAYER_KEY_BINDINGS[player.id]?.[key];
+      return direction ? { playerId: player.id, direction } : null;
+    })
+    .find(Boolean) || null;
+}
+
+function createPendingDirections(game) {
+  return Object.fromEntries(game.players.filter((player) => player.alive).map((player) => [player.id, player.direction]));
+}
+
 export default function SnakePage() {
-  const [game, setGame] = useState(() => createInitialState({ boardSize: BOARD_SIZE }));
+  const [playerCount, setPlayerCount] = useState(1);
+  const [game, setGame] = useState(() => createInitialState({ boardSize: BOARD_SIZE, playerCount: 1 }));
   const [isRunning, setIsRunning] = useState(true);
-  const [mode, setMode] = useState(MODES.ARCADE);
-  const [musicEnabled, setMusicEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const [bestScore, setBestScore] = useState(0);
   const [worldBest, setWorldBest] = useState(null);
   const [worldAvailable, setWorldAvailable] = useState(false);
-  const pendingDirectionRef = useRef(DIRECTIONS.RIGHT);
+  const pendingDirectionsRef = useRef(createPendingDirections(createInitialState({ boardSize: BOARD_SIZE, playerCount: 1 })));
   const gestureStartRef = useRef(null);
   const musicControllerRef = useRef(null);
   const submittedWorldScoreRef = useRef(null);
 
-  function queueDirection(direction) {
-    const basisDirection = pendingDirectionRef.current || game.direction;
+  const totalScore = useMemo(() => getTotalScore(game), [game]);
+
+  function applyGame(nextGame, { autoStart = true } = {}) {
+    pendingDirectionsRef.current = createPendingDirections(nextGame);
+    setGame(nextGame);
+    setIsRunning(autoStart);
+  }
+
+  function resetGame({ autoStart = true, playerCountOverride = playerCount, nextDirections } = {}) {
+    const nextGame = createInitialState({
+      boardSize: BOARD_SIZE,
+      playerCount: playerCountOverride
+    });
+    submittedWorldScoreRef.current = null;
+
+    if (nextDirections) {
+      nextGame.players = nextGame.players.map((player) => {
+        const requestedDirection = nextDirections[player.id];
+        return canTurn(player.direction, requestedDirection)
+          ? {
+              ...player,
+              direction: requestedDirection
+            }
+          : player;
+      });
+    }
+
+    applyGame(nextGame, { autoStart });
+  }
+
+  function queueDirection(playerId, direction) {
+    const player = game.players.find((entry) => entry.id === playerId && entry.alive);
+    if (!player) {
+      return;
+    }
+
+    const basisDirection = pendingDirectionsRef.current[playerId] || player.direction;
     if (!canTurn(basisDirection, direction)) {
       return;
     }
-    pendingDirectionRef.current = direction;
+
+    pendingDirectionsRef.current = {
+      ...pendingDirectionsRef.current,
+      [playerId]: direction
+    };
+
     if (!game.gameOver) {
       setIsRunning(true);
     }
-  }
-
-  function resetGame({ autoStart = true, nextDirection } = {}) {
-    const nextGame = createInitialState({ boardSize: BOARD_SIZE });
-    const direction = canTurn(nextGame.direction, nextDirection) ? nextDirection : nextGame.direction;
-
-    pendingDirectionRef.current = direction;
-    setGame({
-      ...nextGame,
-      direction
-    });
-    setIsRunning(autoStart);
   }
 
   function togglePlayback() {
@@ -110,7 +179,19 @@ export default function SnakePage() {
     setIsRunning((currentValue) => !currentValue);
   }
 
+  function handlePlayerCountChange(nextPlayerCount) {
+    setPlayerCount(nextPlayerCount);
+    resetGame({
+      autoStart: true,
+      playerCountOverride: nextPlayerCount
+    });
+  }
+
   function handlePointerDown(event) {
+    if (playerCount !== 1) {
+      return;
+    }
+
     gestureStartRef.current = {
       x: event.clientX,
       y: event.clientY
@@ -118,20 +199,32 @@ export default function SnakePage() {
   }
 
   function handlePointerUp(event) {
+    if (playerCount !== 1) {
+      if (game.gameOver) {
+        resetGame({ autoStart: true });
+      }
+      return;
+    }
+
     const start = gestureStartRef.current;
     gestureStartRef.current = null;
 
     if (!start) {
+      if (game.gameOver) {
+        resetGame({ autoStart: true });
+      }
       return;
     }
 
     const direction = getDirectionFromGesture(event.clientX - start.x, event.clientY - start.y);
-
     if (direction) {
       if (game.gameOver) {
-        resetGame({ autoStart: true, nextDirection: direction });
+        resetGame({
+          autoStart: true,
+          nextDirections: { p1: direction }
+        });
       } else {
-        queueDirection(direction);
+        queueDirection("p1", direction);
       }
       return;
     }
@@ -142,9 +235,17 @@ export default function SnakePage() {
   }
 
   useEffect(() => {
+    const storedPlayerCount = readStoredPlayerCount();
     setBestScore(readStoredNumber(LOCAL_BEST_KEY, 0));
-    setMode(window.localStorage.getItem(MODE_KEY) || MODES.ARCADE);
-    setMusicEnabled(readStoredFlag(MUSIC_KEY, false));
+    setSoundEnabled(readStoredFlag(SOUND_KEY, false));
+    setPlayerCount(storedPlayerCount);
+    applyGame(
+      createInitialState({
+        boardSize: BOARD_SIZE,
+        playerCount: storedPlayerCount
+      }),
+      { autoStart: true }
+    );
   }, []);
 
   useEffect(() => {
@@ -177,28 +278,28 @@ export default function SnakePage() {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(MODE_KEY, mode);
-  }, [mode]);
+    window.localStorage.setItem(PLAYER_COUNT_KEY, String(playerCount));
+  }, [playerCount]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(MUSIC_KEY, String(musicEnabled));
-  }, [musicEnabled]);
+    window.localStorage.setItem(SOUND_KEY, String(soundEnabled));
+  }, [soundEnabled]);
 
   useEffect(() => {
-    if (game.score <= bestScore || typeof window === "undefined") {
+    if (totalScore <= bestScore || typeof window === "undefined") {
       return;
     }
 
-    setBestScore(game.score);
-    window.localStorage.setItem(LOCAL_BEST_KEY, String(game.score));
-  }, [bestScore, game.score]);
+    setBestScore(totalScore);
+    window.localStorage.setItem(LOCAL_BEST_KEY, String(totalScore));
+  }, [bestScore, totalScore]);
 
   useEffect(() => {
     if (!musicControllerRef.current) {
-      musicControllerRef.current = createArcadeMusicController();
+      musicControllerRef.current = createChillMusicController();
     }
 
     return () => {
@@ -213,32 +314,32 @@ export default function SnakePage() {
       return;
     }
 
-    if (mode === MODES.ARCADE && musicEnabled && isRunning && !game.gameOver) {
+    if (soundEnabled && isRunning && !game.gameOver) {
       controller.start();
     } else {
       controller.stop();
     }
-  }, [game.gameOver, isRunning, mode, musicEnabled]);
+  }, [game.gameOver, isRunning, soundEnabled]);
 
   useEffect(() => {
-    if (!game.gameOver || !worldAvailable || game.score <= 0) {
+    if (!game.gameOver || !worldAvailable || totalScore <= 0) {
       return;
     }
-    if (submittedWorldScoreRef.current === game.score) {
+    if (submittedWorldScoreRef.current === totalScore) {
       return;
     }
-    if (worldBest !== null && game.score <= worldBest) {
+    if (worldBest !== null && totalScore <= worldBest) {
       return;
     }
 
-    submittedWorldScoreRef.current = game.score;
+    submittedWorldScoreRef.current = totalScore;
 
     fetch("/api/snake-score", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ score: game.score })
+      body: JSON.stringify({ score: totalScore })
     })
       .then((response) => response.json())
       .then((payload) => {
@@ -248,20 +349,25 @@ export default function SnakePage() {
         }
       })
       .catch(() => {});
-  }, [game.gameOver, game.score, worldAvailable, worldBest]);
+  }, [game.gameOver, totalScore, worldAvailable, worldBest]);
 
   useEffect(() => {
     function handleKeyDown(event) {
       const normalizedKey = event.key.toLowerCase();
-      const direction = KEY_TO_DIRECTION[normalizedKey];
+      const command = getDirectionCommand(normalizedKey, playerCount);
 
-      if (direction) {
+      if (command) {
         event.preventDefault();
         if (game.gameOver) {
-          resetGame({ autoStart: true, nextDirection: direction });
+          resetGame({
+            autoStart: true,
+            nextDirections: {
+              [command.playerId]: command.direction
+            }
+          });
           return;
         }
-        queueDirection(direction);
+        queueDirection(command.playerId, command.direction);
         return;
       }
 
@@ -275,14 +381,9 @@ export default function SnakePage() {
         resetGame({ autoStart: true });
       }
 
-      if (normalizedKey === "m" && mode === MODES.ARCADE) {
+      if (normalizedKey === "m") {
         event.preventDefault();
-        setMusicEnabled((currentValue) => !currentValue);
-      }
-
-      if (normalizedKey === "c") {
-        event.preventDefault();
-        setMode((currentValue) => (currentValue === MODES.ARCADE ? MODES.CHILL : MODES.ARCADE));
+        setSoundEnabled((currentValue) => !currentValue);
       }
     }
 
@@ -290,7 +391,7 @@ export default function SnakePage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [game.direction, game.gameOver, mode]);
+  }, [game.gameOver, playerCount]);
 
   useEffect(() => {
     if (!isRunning || game.gameOver) {
@@ -300,18 +401,18 @@ export default function SnakePage() {
     const timer = window.setInterval(() => {
       setGame((currentGame) => {
         const nextGame = stepGame(currentGame, {
-          nextDirection: pendingDirectionRef.current,
+          nextDirections: pendingDirectionsRef.current,
           random: Math.random
         });
-        pendingDirectionRef.current = nextGame.direction;
+        pendingDirectionsRef.current = createPendingDirections(nextGame);
         return nextGame;
       });
-    }, TICK_BY_MODE[mode]);
+    }, TICK_MS);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [game.gameOver, isRunning, mode]);
+  }, [game.gameOver, isRunning]);
 
   useEffect(() => {
     if (game.gameOver) {
@@ -319,12 +420,20 @@ export default function SnakePage() {
     }
   }, [game.gameOver]);
 
-  const snakeIndexByCell = useMemo(
-    () => new Map(game.snake.map((segment, index) => [pointKey(segment), index])),
-    [game.snake]
-  );
+  const cellMap = useMemo(() => {
+    const map = new Map();
+    game.players.forEach((player) => {
+      player.snake.forEach((segment, index) => {
+        map.set(pointKey(segment), {
+          player,
+          index
+        });
+      });
+    });
+    return map;
+  }, [game.players]);
+
   const foodCellKey = game.food ? pointKey(game.food) : "";
-  const headCellKey = pointKey(game.snake[0]);
   const boardCells = useMemo(() => {
     const cells = [];
 
@@ -333,16 +442,17 @@ export default function SnakePage() {
         const key = `${x}:${y}`;
         let className = "snake-cell";
         let style;
+        const occupant = cellMap.get(key);
 
         if (key === foodCellKey) {
           className += " food";
-        } else if (key === headCellKey) {
-          className += " snake-head";
-          style = { "--cell-hue": `${(game.tick * 10) % 360}` };
-        } else if (snakeIndexByCell.has(key)) {
-          className += " snake-body";
+        } else if (occupant) {
+          className += occupant.index === 0 ? " snake-head" : " snake-body";
           style = {
-            "--cell-hue": `${(190 + snakeIndexByCell.get(key) * 26) % 360}`
+            "--player-hue": occupant.player.hue,
+            "--segment-lightness": `${Math.max(54, 76 - occupant.index * 3)}%`,
+            "--segment-accent": `${Math.max(44, 58 - occupant.index * 2)}%`,
+            "--segment-glow": `${Math.max(8, 16 - occupant.index)}%`
           };
         }
 
@@ -359,19 +469,15 @@ export default function SnakePage() {
     }
 
     return cells;
-  }, [foodCellKey, game.boardSize, game.tick, headCellKey, snakeIndexByCell]);
+  }, [cellMap, foodCellKey, game.boardSize]);
 
   return (
-    <main
-      className={`page-shell snake-screen ${mode === MODES.CHILL ? "chill-mode" : "arcade-mode"}${game.gameOver ? " is-game-over" : ""}`}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-    >
-      <nav className="snake-topnav" aria-label="Snake scoreboard">
+    <main className={`page-shell snake-screen${game.gameOver ? " is-game-over" : ""}`} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
+      <nav className="snake-topnav" aria-label="Snake status">
         <div className="snake-nav-group">
           <div className="snake-stat-pill">
             <span>SCORE</span>
-            <strong>{formatScore(game.score)}</strong>
+            <strong>{formatScore(totalScore)}</strong>
           </div>
           <div className="snake-stat-pill">
             <span>BEST</span>
@@ -384,6 +490,21 @@ export default function SnakePage() {
             </div>
           ) : null}
         </div>
+
+        {playerCount > 1 ? (
+          <div className="snake-nav-group">
+            {game.players.map((player) => (
+              <div
+                key={player.id}
+                className={`snake-player-pill${player.alive ? "" : " muted"}`}
+                style={{ "--player-hue": player.hue }}
+              >
+                <span>{player.label}</span>
+                <strong>{formatScore(player.score)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </nav>
 
       <div className="snake-stage">
@@ -406,31 +527,26 @@ export default function SnakePage() {
           </button>
         </div>
 
-        <div className="snake-mode-toggle" role="group" aria-label="Snake mode">
-          <button
-            type="button"
-            className={`snake-mode-pill${mode === MODES.ARCADE ? " active" : ""}`}
-            onClick={() => setMode(MODES.ARCADE)}
-          >
-            Arcade
-          </button>
-          <button
-            type="button"
-            className={`snake-mode-pill${mode === MODES.CHILL ? " active" : ""}`}
-            onClick={() => setMode(MODES.CHILL)}
-          >
-            Chill
-          </button>
+        <div className="snake-mode-toggle" role="group" aria-label="Player count">
+          {Array.from({ length: MAX_PLAYERS }, (_, index) => index + 1).map((count) => (
+            <button
+              key={count}
+              type="button"
+              className={`snake-mode-pill${playerCount === count ? " active" : ""}`}
+              onClick={() => handlePlayerCountChange(count)}
+            >
+              {count}P
+            </button>
+          ))}
         </div>
 
         <div className="snake-nav-group">
           <button
             type="button"
-            className={`snake-control-pill${musicEnabled && mode === MODES.ARCADE ? " active" : ""}`}
-            onClick={() => setMusicEnabled((currentValue) => !currentValue)}
-            disabled={mode !== MODES.ARCADE}
+            className={`snake-control-pill${soundEnabled ? " active" : ""}`}
+            onClick={() => setSoundEnabled((currentValue) => !currentValue)}
           >
-            Music
+            Sound
           </button>
         </div>
       </nav>

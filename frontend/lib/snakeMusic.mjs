@@ -1,10 +1,36 @@
-const LEAD_PATTERN = [659.25, 783.99, 987.77, 1046.5, 783.99, 659.25, 587.33, 523.25];
-const BASS_PATTERN = [164.81, 196, 220, 246.94];
+const DRONE_FREQUENCIES = [196, 246.94, 293.66];
+const CHIME_FREQUENCIES = [392, 440, 523.25, 587.33];
 
-export function createArcadeMusicController() {
+function createOscillatorVoice(context, frequency, detune, destination) {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+  oscillator.detune.setValueAtTime(detune, context.currentTime);
+
+  gain.gain.setValueAtTime(0.0001, context.currentTime);
+
+  oscillator.connect(gain);
+  gain.connect(destination);
+  oscillator.start();
+
+  return {
+    oscillator,
+    gain
+  };
+}
+
+export function createChillMusicController() {
   let audioContext = null;
-  let intervalHandle = null;
-  let step = 0;
+  let masterGain = null;
+  let filter = null;
+  let lfo = null;
+  let lfoGain = null;
+  let voices = [];
+  let chimeInterval = null;
+  let shutdownHandle = null;
+  let running = false;
 
   async function ensureContext() {
     if (typeof window === "undefined") {
@@ -27,89 +53,140 @@ export function createArcadeMusicController() {
     return audioContext;
   }
 
-  function playNote(context, frequency, { type = "square", gainValue = 0.02, startOffset = 0, duration = 0.18 } = {}) {
-    const now = context.currentTime + startOffset;
+  function scheduleChime(context) {
+    const now = context.currentTime;
     const oscillator = context.createOscillator();
-    const filter = context.createBiquadFilter();
     const gain = context.createGain();
+    const filterNode = context.createBiquadFilter();
+    const frequency = CHIME_FREQUENCIES[Math.floor(Math.random() * CHIME_FREQUENCIES.length)];
 
-    oscillator.type = type;
+    oscillator.type = "triangle";
     oscillator.frequency.setValueAtTime(frequency, now);
-
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(type === "square" ? 1800 : 1200, now);
+    filterNode.type = "lowpass";
+    filterNode.frequency.setValueAtTime(1400, now);
 
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(gainValue, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    gain.gain.exponentialRampToValueAtTime(0.014, now + 0.24);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
 
-    oscillator.connect(filter);
-    filter.connect(gain);
-    gain.connect(context.destination);
+    oscillator.connect(filterNode);
+    filterNode.connect(gain);
+    gain.connect(masterGain);
 
     oscillator.start(now);
-    oscillator.stop(now + duration + 0.03);
+    oscillator.stop(now + 3.1);
   }
 
-  async function playStep() {
+  async function buildGraph() {
     const context = await ensureContext();
-    if (!context) {
+    if (!context || running) {
       return;
     }
 
-    const leadFrequency = LEAD_PATTERN[step % LEAD_PATTERN.length];
-    const bassFrequency = BASS_PATTERN[Math.floor(step / 2) % BASS_PATTERN.length];
+    masterGain = context.createGain();
+    masterGain.gain.setValueAtTime(0.0001, context.currentTime);
 
-    playNote(context, leadFrequency, {
-      type: "square",
-      gainValue: 0.024,
-      duration: 0.17
+    filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(780, context.currentTime);
+    filter.Q.setValueAtTime(0.5, context.currentTime);
+
+    lfo = context.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.setValueAtTime(0.06, context.currentTime);
+
+    lfoGain = context.createGain();
+    lfoGain.gain.setValueAtTime(180, context.currentTime);
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    filter.connect(masterGain);
+    masterGain.connect(context.destination);
+
+    voices = DRONE_FREQUENCIES.map((frequency, index) =>
+      createOscillatorVoice(context, frequency, index === 1 ? -4 : index === 2 ? 5 : 0, filter)
+    );
+
+    voices.forEach((voice, index) => {
+      voice.gain.gain.linearRampToValueAtTime(0.006 + index * 0.0025, context.currentTime + 2.4);
     });
-    playNote(context, leadFrequency / 2, {
-      type: "triangle",
-      gainValue: 0.012,
-      startOffset: 0.04,
-      duration: 0.22
-    });
 
-    if (step % 2 === 0) {
-      playNote(context, bassFrequency, {
-        type: "sawtooth",
-        gainValue: 0.009,
-        startOffset: 0.02,
-        duration: 0.28
-      });
-    }
+    masterGain.gain.linearRampToValueAtTime(0.9, context.currentTime + 1.8);
+    lfo.start();
 
-    step += 1;
+    scheduleChime(context);
+    chimeInterval = window.setInterval(() => {
+      scheduleChime(context);
+    }, 4200);
+
+    running = true;
   }
 
-  return {
-    async start() {
-      if (intervalHandle) {
-        return;
-      }
-
-      await playStep();
-      intervalHandle = window.setInterval(() => {
-        playStep();
-      }, 190);
-    },
-
-    stop() {
-      if (intervalHandle) {
-        window.clearInterval(intervalHandle);
-        intervalHandle = null;
-      }
-    },
-
-    destroy() {
-      this.stop();
-      if (audioContext) {
+  function stopGraph({ destroy = false } = {}) {
+    if (!audioContext || !running) {
+      if (destroy && audioContext) {
         const contextToClose = audioContext;
         audioContext = null;
         contextToClose.close().catch(() => {});
       }
+      return;
+    }
+
+    const now = audioContext.currentTime;
+
+    if (chimeInterval) {
+      window.clearInterval(chimeInterval);
+      chimeInterval = null;
+    }
+
+    if (shutdownHandle) {
+      window.clearTimeout(shutdownHandle);
+      shutdownHandle = null;
+    }
+
+    masterGain?.gain.cancelScheduledValues(now);
+    masterGain?.gain.setValueAtTime(masterGain.gain.value || 0.9, now);
+    masterGain?.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
+
+    voices.forEach((voice) => {
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setValueAtTime(voice.gain.gain.value || 0.008, now);
+      voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
+      voice.oscillator.stop(now + 1.8);
+    });
+
+    lfo?.stop(now + 1.8);
+    running = false;
+
+    shutdownHandle = window.setTimeout(() => {
+      voices = [];
+      lfo = null;
+      lfoGain = null;
+      filter = null;
+      masterGain = null;
+
+      if (destroy && audioContext) {
+        const contextToClose = audioContext;
+        audioContext = null;
+        contextToClose.close().catch(() => {});
+      }
+    }, 1900);
+  }
+
+  return {
+    async start() {
+      await buildGraph();
+    },
+
+    stop() {
+      stopGraph();
+    },
+
+    destroy() {
+      stopGraph({ destroy: true });
     }
   };
 }
+
+export const createArcadeMusicController = createChillMusicController;
