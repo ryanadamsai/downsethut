@@ -66,7 +66,7 @@ export function createChillMusicController() {
     filterNode.frequency.setValueAtTime(1400, now);
 
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.014, now + 0.24);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.24);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
 
     oscillator.connect(filterNode);
@@ -112,7 +112,7 @@ export function createChillMusicController() {
       voice.gain.gain.linearRampToValueAtTime(0.006 + index * 0.0025, context.currentTime + 2.4);
     });
 
-    masterGain.gain.linearRampToValueAtTime(0.9, context.currentTime + 1.8);
+    masterGain.gain.linearRampToValueAtTime(0.6, context.currentTime + 1.8);
     lfo.start();
 
     scheduleChime(context);
@@ -146,7 +146,7 @@ export function createChillMusicController() {
     }
 
     masterGain?.gain.cancelScheduledValues(now);
-    masterGain?.gain.setValueAtTime(masterGain.gain.value || 0.9, now);
+    masterGain?.gain.setValueAtTime(masterGain.gain.value || 0.6, now);
     masterGain?.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
 
     voices.forEach((voice) => {
