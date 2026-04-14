@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { createChillMusicController } from "../lib/snakeMusic.mjs";
-import { BOARD_SIZE, DIRECTIONS, MAX_PLAYERS, PLAYER_CONFIGS, TICK_MS, canTurn, createInitialState, getTotalScore, pointKey, stepGame } from "../lib/snake.mjs";
+import { BOARD_SIZE, DIRECTIONS, TICK_MS, canTurn, createInitialState, pointKey, stepGame } from "../lib/snake.mjs";
 
 const LOCAL_BEST_KEY = "snake-2026-best";
-const PLAYER_COUNT_KEY = "snake-2026-players";
-const SOUND_KEY = "snake-2026-sound";
 const SWIPE_THRESHOLD = 18;
 
-const SOLO_KEY_TO_DIRECTION = {
+const KEY_TO_DIRECTION = {
   arrowup: DIRECTIONS.UP,
   w: DIRECTIONS.UP,
   arrowdown: DIRECTIONS.DOWN,
@@ -19,33 +16,6 @@ const SOLO_KEY_TO_DIRECTION = {
   d: DIRECTIONS.RIGHT
 };
 
-const PLAYER_KEY_BINDINGS = Object.freeze({
-  p1: {
-    arrowup: DIRECTIONS.UP,
-    arrowdown: DIRECTIONS.DOWN,
-    arrowleft: DIRECTIONS.LEFT,
-    arrowright: DIRECTIONS.RIGHT
-  },
-  p2: {
-    w: DIRECTIONS.UP,
-    s: DIRECTIONS.DOWN,
-    a: DIRECTIONS.LEFT,
-    d: DIRECTIONS.RIGHT
-  },
-  p3: {
-    i: DIRECTIONS.UP,
-    k: DIRECTIONS.DOWN,
-    j: DIRECTIONS.LEFT,
-    l: DIRECTIONS.RIGHT
-  },
-  p4: {
-    t: DIRECTIONS.UP,
-    g: DIRECTIONS.DOWN,
-    f: DIRECTIONS.LEFT,
-    h: DIRECTIONS.RIGHT
-  }
-});
-
 function readStoredNumber(key, fallbackValue = 0) {
   if (typeof window === "undefined") {
     return fallbackValue;
@@ -53,23 +23,6 @@ function readStoredNumber(key, fallbackValue = 0) {
 
   const value = Number.parseInt(window.localStorage.getItem(key) || "", 10);
   return Number.isFinite(value) ? value : fallbackValue;
-}
-
-function readStoredFlag(key, fallbackValue = false) {
-  if (typeof window === "undefined") {
-    return fallbackValue;
-  }
-
-  const value = window.localStorage.getItem(key);
-  if (value === null) {
-    return fallbackValue;
-  }
-
-  return value === "true";
-}
-
-function readStoredPlayerCount() {
-  return Math.min(Math.max(readStoredNumber(PLAYER_COUNT_KEY, 1), 1), MAX_PLAYERS);
 }
 
 function formatScore(score) {
@@ -88,110 +41,49 @@ function getDirectionFromGesture(deltaX, deltaY) {
   return deltaY > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
 }
 
-function getDirectionCommand(key, playerCount) {
-  if (playerCount === 1) {
-    const direction = SOLO_KEY_TO_DIRECTION[key];
-    return direction ? { playerId: "p1", direction } : null;
-  }
-
-  return PLAYER_CONFIGS.slice(0, playerCount)
-    .map((player) => {
-      const direction = PLAYER_KEY_BINDINGS[player.id]?.[key];
-      return direction ? { playerId: player.id, direction } : null;
-    })
-    .find(Boolean) || null;
-}
-
-function createPendingDirections(game) {
-  return Object.fromEntries(game.players.filter((player) => player.alive).map((player) => [player.id, player.direction]));
-}
-
 export default function SnakePage() {
-  const [playerCount, setPlayerCount] = useState(1);
   const [game, setGame] = useState(() => createInitialState({ boardSize: BOARD_SIZE, playerCount: 1 }));
   const [isRunning, setIsRunning] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(false);
   const [bestScore, setBestScore] = useState(0);
   const [worldBest, setWorldBest] = useState(null);
   const [worldAvailable, setWorldAvailable] = useState(false);
-  const pendingDirectionsRef = useRef(createPendingDirections(createInitialState({ boardSize: BOARD_SIZE, playerCount: 1 })));
+  const pendingDirectionRef = useRef(DIRECTIONS.RIGHT);
   const gestureStartRef = useRef(null);
-  const musicControllerRef = useRef(null);
   const submittedWorldScoreRef = useRef(null);
 
-  const totalScore = useMemo(() => getTotalScore(game), [game]);
+  const player = game.players[0];
 
-  function applyGame(nextGame, { autoStart = true } = {}) {
-    pendingDirectionsRef.current = createPendingDirections(nextGame);
+  function resetGame({ autoStart = true, nextDirection } = {}) {
+    const nextGame = createInitialState({ boardSize: BOARD_SIZE, playerCount: 1 });
+    const direction = canTurn(nextGame.players[0].direction, nextDirection) ? nextDirection : nextGame.players[0].direction;
+
+    nextGame.players = [
+      {
+        ...nextGame.players[0],
+        direction
+      }
+    ];
+
+    pendingDirectionRef.current = direction;
+    submittedWorldScoreRef.current = null;
     setGame(nextGame);
     setIsRunning(autoStart);
   }
 
-  function resetGame({ autoStart = true, playerCountOverride = playerCount, nextDirections } = {}) {
-    const nextGame = createInitialState({
-      boardSize: BOARD_SIZE,
-      playerCount: playerCountOverride
-    });
-    submittedWorldScoreRef.current = null;
-
-    if (nextDirections) {
-      nextGame.players = nextGame.players.map((player) => {
-        const requestedDirection = nextDirections[player.id];
-        return canTurn(player.direction, requestedDirection)
-          ? {
-              ...player,
-              direction: requestedDirection
-            }
-          : player;
-      });
-    }
-
-    applyGame(nextGame, { autoStart });
-  }
-
-  function queueDirection(playerId, direction) {
-    const player = game.players.find((entry) => entry.id === playerId && entry.alive);
-    if (!player) {
-      return;
-    }
-
-    const basisDirection = pendingDirectionsRef.current[playerId] || player.direction;
+  function queueDirection(direction) {
+    const basisDirection = pendingDirectionRef.current || player.direction;
     if (!canTurn(basisDirection, direction)) {
       return;
     }
 
-    pendingDirectionsRef.current = {
-      ...pendingDirectionsRef.current,
-      [playerId]: direction
-    };
+    pendingDirectionRef.current = direction;
 
     if (!game.gameOver) {
       setIsRunning(true);
     }
   }
 
-  function togglePlayback() {
-    if (game.gameOver) {
-      resetGame({ autoStart: true });
-      return;
-    }
-
-    setIsRunning((currentValue) => !currentValue);
-  }
-
-  function handlePlayerCountChange(nextPlayerCount) {
-    setPlayerCount(nextPlayerCount);
-    resetGame({
-      autoStart: true,
-      playerCountOverride: nextPlayerCount
-    });
-  }
-
   function handlePointerDown(event) {
-    if (playerCount !== 1) {
-      return;
-    }
-
     gestureStartRef.current = {
       x: event.clientX,
       y: event.clientY
@@ -199,13 +91,6 @@ export default function SnakePage() {
   }
 
   function handlePointerUp(event) {
-    if (playerCount !== 1) {
-      if (game.gameOver) {
-        resetGame({ autoStart: true });
-      }
-      return;
-    }
-
     const start = gestureStartRef.current;
     gestureStartRef.current = null;
 
@@ -217,14 +102,12 @@ export default function SnakePage() {
     }
 
     const direction = getDirectionFromGesture(event.clientX - start.x, event.clientY - start.y);
+
     if (direction) {
       if (game.gameOver) {
-        resetGame({
-          autoStart: true,
-          nextDirections: { p1: direction }
-        });
+        resetGame({ autoStart: true, nextDirection: direction });
       } else {
-        queueDirection("p1", direction);
+        queueDirection(direction);
       }
       return;
     }
@@ -235,17 +118,7 @@ export default function SnakePage() {
   }
 
   useEffect(() => {
-    const storedPlayerCount = readStoredPlayerCount();
     setBestScore(readStoredNumber(LOCAL_BEST_KEY, 0));
-    setSoundEnabled(readStoredFlag(SOUND_KEY, false));
-    setPlayerCount(storedPlayerCount);
-    applyGame(
-      createInitialState({
-        boardSize: BOARD_SIZE,
-        playerCount: storedPlayerCount
-      }),
-      { autoStart: true }
-    );
   }, []);
 
   useEffect(() => {
@@ -275,71 +148,33 @@ export default function SnakePage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (player.score <= bestScore || typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(PLAYER_COUNT_KEY, String(playerCount));
-  }, [playerCount]);
+
+    setBestScore(player.score);
+    window.localStorage.setItem(LOCAL_BEST_KEY, String(player.score));
+  }, [bestScore, player.score]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (!game.gameOver || !worldAvailable || player.score <= 0) {
       return;
     }
-    window.localStorage.setItem(SOUND_KEY, String(soundEnabled));
-  }, [soundEnabled]);
-
-  useEffect(() => {
-    if (totalScore <= bestScore || typeof window === "undefined") {
+    if (submittedWorldScoreRef.current === player.score) {
       return;
     }
-
-    setBestScore(totalScore);
-    window.localStorage.setItem(LOCAL_BEST_KEY, String(totalScore));
-  }, [bestScore, totalScore]);
-
-  useEffect(() => {
-    if (!musicControllerRef.current) {
-      musicControllerRef.current = createChillMusicController();
-    }
-
-    return () => {
-      musicControllerRef.current?.destroy();
-      musicControllerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const controller = musicControllerRef.current;
-    if (!controller) {
+    if (worldBest !== null && player.score <= worldBest) {
       return;
     }
 
-    if (soundEnabled && isRunning && !game.gameOver) {
-      controller.start();
-    } else {
-      controller.stop();
-    }
-  }, [game.gameOver, isRunning, soundEnabled]);
-
-  useEffect(() => {
-    if (!game.gameOver || !worldAvailable || totalScore <= 0) {
-      return;
-    }
-    if (submittedWorldScoreRef.current === totalScore) {
-      return;
-    }
-    if (worldBest !== null && totalScore <= worldBest) {
-      return;
-    }
-
-    submittedWorldScoreRef.current = totalScore;
+    submittedWorldScoreRef.current = player.score;
 
     fetch("/api/snake-score", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ score: totalScore })
+      body: JSON.stringify({ score: player.score })
     })
       .then((response) => response.json())
       .then((payload) => {
@@ -349,41 +184,35 @@ export default function SnakePage() {
         }
       })
       .catch(() => {});
-  }, [game.gameOver, totalScore, worldAvailable, worldBest]);
+  }, [game.gameOver, player.score, worldAvailable, worldBest]);
 
   useEffect(() => {
     function handleKeyDown(event) {
       const normalizedKey = event.key.toLowerCase();
-      const command = getDirectionCommand(normalizedKey, playerCount);
+      const direction = KEY_TO_DIRECTION[normalizedKey];
 
-      if (command) {
+      if (direction) {
         event.preventDefault();
         if (game.gameOver) {
-          resetGame({
-            autoStart: true,
-            nextDirections: {
-              [command.playerId]: command.direction
-            }
-          });
+          resetGame({ autoStart: true, nextDirection: direction });
           return;
         }
-        queueDirection(command.playerId, command.direction);
+        queueDirection(direction);
         return;
       }
 
       if (event.code === "Space" || normalizedKey === " ") {
         event.preventDefault();
-        togglePlayback();
+        if (game.gameOver) {
+          resetGame({ autoStart: true });
+          return;
+        }
+        setIsRunning((currentValue) => !currentValue);
       }
 
       if (normalizedKey === "r") {
         event.preventDefault();
         resetGame({ autoStart: true });
-      }
-
-      if (normalizedKey === "m") {
-        event.preventDefault();
-        setSoundEnabled((currentValue) => !currentValue);
       }
     }
 
@@ -391,7 +220,7 @@ export default function SnakePage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [game.gameOver, playerCount]);
+  }, [game.gameOver, player.direction]);
 
   useEffect(() => {
     if (!isRunning || game.gameOver) {
@@ -401,10 +230,10 @@ export default function SnakePage() {
     const timer = window.setInterval(() => {
       setGame((currentGame) => {
         const nextGame = stepGame(currentGame, {
-          nextDirections: pendingDirectionsRef.current,
+          nextDirection: pendingDirectionRef.current,
           random: Math.random
         });
-        pendingDirectionsRef.current = createPendingDirections(nextGame);
+        pendingDirectionRef.current = nextGame.players[0].direction;
         return nextGame;
       });
     }, TICK_MS);
@@ -420,20 +249,12 @@ export default function SnakePage() {
     }
   }, [game.gameOver]);
 
-  const cellMap = useMemo(() => {
-    const map = new Map();
-    game.players.forEach((player) => {
-      player.snake.forEach((segment, index) => {
-        map.set(pointKey(segment), {
-          player,
-          index
-        });
-      });
-    });
-    return map;
-  }, [game.players]);
-
+  const snakeIndexByCell = useMemo(
+    () => new Map(player.snake.map((segment, index) => [pointKey(segment), index])),
+    [player.snake]
+  );
   const foodCellKey = game.food ? pointKey(game.food) : "";
+  const headCellKey = player.snake[0] ? pointKey(player.snake[0]) : "";
   const boardCells = useMemo(() => {
     const cells = [];
 
@@ -442,17 +263,18 @@ export default function SnakePage() {
         const key = `${x}:${y}`;
         let className = "snake-cell";
         let style;
-        const occupant = cellMap.get(key);
 
         if (key === foodCellKey) {
           className += " food";
-        } else if (occupant) {
-          className += occupant.index === 0 ? " snake-head" : " snake-body";
+        } else if (key === headCellKey) {
+          className += " snake-head";
+        } else if (snakeIndexByCell.has(key)) {
+          const depth = snakeIndexByCell.get(key);
+          className += " snake-body";
           style = {
-            "--player-hue": occupant.player.hue,
-            "--segment-lightness": `${Math.max(54, 76 - occupant.index * 3)}%`,
-            "--segment-accent": `${Math.max(44, 58 - occupant.index * 2)}%`,
-            "--segment-glow": `${Math.max(8, 16 - occupant.index)}%`
+            "--segment-lightness": `${Math.max(52, 76 - depth * 3)}%`,
+            "--segment-accent": `${Math.max(42, 58 - depth * 2)}%`,
+            "--segment-glow": `${Math.max(8, 18 - depth)}%`
           };
         }
 
@@ -469,15 +291,15 @@ export default function SnakePage() {
     }
 
     return cells;
-  }, [cellMap, foodCellKey, game.boardSize]);
+  }, [foodCellKey, game.boardSize, headCellKey, snakeIndexByCell]);
 
   return (
-    <main className={`page-shell snake-screen${game.gameOver ? " is-game-over" : ""}`} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
-      <nav className="snake-topnav" aria-label="Snake status">
+    <main className={`page-shell snake-screen snake-screen-solo${game.gameOver ? " is-game-over" : ""}`} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}>
+      <nav className="snake-topnav snake-topnav-solo" aria-label="Snake status">
         <div className="snake-nav-group">
           <div className="snake-stat-pill">
             <span>SCORE</span>
-            <strong>{formatScore(totalScore)}</strong>
+            <strong>{formatScore(player.score)}</strong>
           </div>
           <div className="snake-stat-pill">
             <span>BEST</span>
@@ -490,24 +312,9 @@ export default function SnakePage() {
             </div>
           ) : null}
         </div>
-
-        {playerCount > 1 ? (
-          <div className="snake-nav-group">
-            {game.players.map((player) => (
-              <div
-                key={player.id}
-                className={`snake-player-pill${player.alive ? "" : " muted"}`}
-                style={{ "--player-hue": player.hue }}
-              >
-                <span>{player.label}</span>
-                <strong>{formatScore(player.score)}</strong>
-              </div>
-            ))}
-          </div>
-        ) : null}
       </nav>
 
-      <div className="snake-stage">
+      <div className="snake-stage snake-stage-solo">
         <div className="snake-board-frame">
           <div
             className="snake-board"
@@ -519,37 +326,6 @@ export default function SnakePage() {
           </div>
         </div>
       </div>
-
-      <nav className="snake-bottomnav" aria-label="Snake controls">
-        <div className="snake-nav-group">
-          <button type="button" className="snake-control-pill" onClick={() => resetGame({ autoStart: true })}>
-            Restart
-          </button>
-        </div>
-
-        <div className="snake-mode-toggle" role="group" aria-label="Player count">
-          {Array.from({ length: MAX_PLAYERS }, (_, index) => index + 1).map((count) => (
-            <button
-              key={count}
-              type="button"
-              className={`snake-mode-pill${playerCount === count ? " active" : ""}`}
-              onClick={() => handlePlayerCountChange(count)}
-            >
-              {count}P
-            </button>
-          ))}
-        </div>
-
-        <div className="snake-nav-group">
-          <button
-            type="button"
-            className={`snake-control-pill${soundEnabled ? " active" : ""}`}
-            onClick={() => setSoundEnabled((currentValue) => !currentValue)}
-          >
-            Sound
-          </button>
-        </div>
-      </nav>
     </main>
   );
 }
